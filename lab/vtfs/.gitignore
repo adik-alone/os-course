@@ -1,4 +1,5 @@
 # Linux kernel module
+.vscode
 *.mod.cmd
 *.mod.o.cmd
 *.ko.cmd
