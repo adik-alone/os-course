@@ -1,6 +1,7 @@
 #include "vtfs.h"
 
 #define MODULE_NAME "vtfs"
+#define ROOT_INODE 1000
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("secs-dev & adik-alone");
@@ -45,7 +46,7 @@ struct dentry* vtfs_mount(
 }
 int vtfs_fill_super(struct super_block *sb, void *data, int silent) {
     umode_t mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
-    struct inode* inode = vtfs_get_inode(sb, NULL, mode, 1000);
+    struct inode* inode = vtfs_get_inode(sb, NULL, mode, ROOT_INODE);
     inode->i_op = &vtfs_inode_ops;
     inode->i_fop = &vtfs_dir_ops;
     sb->s_root = d_make_root(inode);
@@ -94,32 +95,39 @@ int vtfs_iterate(struct file* filp, struct dir_context* ctx) {
   char fsname[10];
   struct dentry* dentry = filp->f_path.dentry;
   struct inode* inode   = dentry->d_inode;
-  unsigned long offset  = filp->f_pos;
-  int stored            = 0;
+  unsigned long offset  = ctx->pos;
   ino_t ino             = inode->i_ino;
   unsigned char ftype;
   ino_t dino;
-  while (true) {
-    if (ino == 100) {
-      if (offset == 0) {
-        strcpy(fsname, ".");
-        ftype = DT_DIR;
-        dino = ino;
-      } else if (offset == 1) {
-        strcpy(fsname, "..");
-        ftype = DT_DIR;
-        dino = dentry->d_parent->d_inode->i_ino;
-      } else if (offset == 2) {
-        strcpy(fsname, "test.txt");
-        ftype = DT_REG;
-        dino = 100;
-      } else {
-        return stored;
-      }
-    }
-  }
-}
 
+  printk(KERN_INFO "1: f_pos = %lu\n", ctx->pos);
+
+  if (ino != ROOT_INODE) return 0; 
+
+  if (offset == 0) {
+    strcpy(fsname, ".");
+    ftype = DT_DIR;
+    dino = ino;
+  } else if (offset == 1) {
+    strcpy(fsname, "..");
+    ftype = DT_DIR;
+    dino = dentry->d_parent->d_inode->i_ino;
+  } else if (offset == 2) {
+    strcpy(fsname, "test.txt");
+    ftype = DT_REG;
+    dino = 101;
+  } else {
+    return 0; 
+  }
+  
+
+  if (!dir_emit(ctx, fsname, strlen(fsname), dino, ftype))
+    return -ENOMEM; 
+
+  ctx->pos++; 
+  printk(KERN_INFO "2: f_pos = %lu\n", ctx->pos);
+  return 1;
+}
 
 
 
