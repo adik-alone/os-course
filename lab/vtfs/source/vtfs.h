@@ -22,13 +22,29 @@ struct dentry* mount_nodev(
 );
 
 
+//inode operations
+
 struct dentry* vtfs_lookup(
     struct inode* parent_inode,  // родительская нода
     struct dentry* child_dentry, // объект, к которому мы пытаемся получить доступ
     unsigned int flag            // неиспользуемое значение
 );
 
+int vtfs_create(
+  struct mnt_idmap *idmap,
+  struct inode *parent_inode, 
+  struct dentry *child_dentry, 
+  umode_t mode, 
+  bool b
+);
+
+int vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry);
+
+
+//file operations 
+
 int vtfs_iterate(struct file* filp, struct dir_context* ctx);
+
 
 
 
@@ -40,6 +56,8 @@ int vtfs_iterate(struct file* filp, struct dir_context* ctx);
 
 struct inode_operations vtfs_inode_ops = {
     .lookup = vtfs_lookup,
+    .create = vtfs_create,
+    .unlink = vtfs_unlink,
 };
 
 struct file_operations vtfs_dir_ops = {
