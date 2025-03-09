@@ -49,14 +49,26 @@ int ram_vtfs_create(
 );
 
 int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry);
+int ram_vtfs_mkdir(struct mnt_idmap *idmap, struct inode *inode, struct dentry *dentry, umode_t mode);
+int ram_vtfs_rmdir(struct inode *inode, struct dentry *dentry);
 
 
 //file operations 
 
 int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx);
-int ram_vtfs_mkdir(struct mnt_idmap *idmap, struct inode *inode, struct dentry *dentry, umode_t mode);
-int ram_vtfs_rmdir(struct inode *inode, struct dentry *dentry);
 
+ssize_t ram_vtfs_read(
+  struct file *filp, // файловый дескриптор
+  char *buffer,      // буфер в user-space для чтения и записи соответственно
+  size_t len,        // длина данных для записи
+  loff_t *offset     //смещение 
+);
+ssize_t ram_vtfs_write(
+  struct file *filp, 
+  const char *buffer, 
+  size_t len, 
+  loff_t *offset
+);
 
 
 
@@ -75,5 +87,8 @@ struct file_operations ram_vtfs_dir_ops = {
 };
 
 struct file_operations ram_vtfs_file_ops = {
-    .iterate_shared = ram_vtfs_iterate,
+  .read = ram_vtfs_read,
+  .write = ram_vtfs_write,
+  // .open = ram_vtfs_open,
+  // .release = ram_vtfs_release,
 };

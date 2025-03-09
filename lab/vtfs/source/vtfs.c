@@ -359,7 +359,7 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
 
   // printk(KERN_INFO "Messege: f_pos = %lu\n", ctx->pos);
 
-  if (inode->i_ino != ROOT_INODE) return 0; 
+  // if (inode->i_ino != ROOT_INODE) return 0; 
 
   if (offset == 0) {
     if (!dir_emit(ctx, ".", 1, inode->i_ino, DT_DIR)) 
@@ -385,6 +385,26 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
   }
   return 0;
 }
+
+
+
+
+ssize_t ram_vtfs_read(
+  struct file *filp, // файловый дескриптор
+  char *buffer,      // буфер в user-space для чтения и записи соответственно
+  size_t len,        // длина данных для записи
+  loff_t *offset     //смещение 
+){ 
+
+}
+// ssize_t ram_vtfs_write(
+//   struct file *filp, 
+//   const char *buffer, 
+//   size_t len, 
+//   loff_t *offset
+// ){
+
+// }
 
 
 
