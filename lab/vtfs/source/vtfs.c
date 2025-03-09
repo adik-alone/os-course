@@ -231,6 +231,7 @@ int ram_vtfs_create(
   umode_t mode, 
   bool b
 ) {
+  printk(KERN_INFO "Creatin file\n");
   const char *name = child_dentry->d_name.name;
 
   struct ram_vtfs_file *file;
@@ -239,8 +240,11 @@ int ram_vtfs_create(
     return -EEXIST;
 
   file = kmalloc(sizeof(*file), GFP_KERNEL);
-  if (file)
+  if (file){
+    printk(KERN_ERR "vtfs_create: not enought memory\n");
+    printk(KERN_INFO "Creating failed\n");
     return -ENOMEM;
+  }
 
   strncpy(file->name, name, NAME_MAX);
   file->ino = next_ino++;
@@ -253,10 +257,12 @@ int ram_vtfs_create(
   inode->i_fop = &ram_vtfs_file_ops;
   
   d_add(child_dentry, inode);
+  printk(KERN_INFO "Finish creating file\n");
   return 0;
 }
 
 int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
+  printk(KERN_INFO "Strart deletting file\n");
   const char *name = child_dentry->d_name.name;
   struct ram_vtfs_file *file, *tmp;
 
@@ -264,9 +270,12 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
     if (!strcmp(file->name, name)){
       list_del(&file->list);
       kfree(file);
+      printk(KERN_INFO "Deletting successe\n");
       return 0;
     }
   }
+  printk(KERN_ERR "vtfs_unlink:No entity\n");
+  printk(KERN_INFO "Deletting failed\n");
   return -ENOENT;
 }
 
@@ -290,20 +299,22 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
   if (offset == 0) {
     if (!dir_emit(ctx, ".", 1, inode->i_ino, DT_DIR)) 
       return -ENOMEM; 
+    ctx->pos++;
   } 
   if (offset == 1) {
     if (!dir_emit(ctx, "..", 2, dentry->d_parent->d_inode->i_ino, DT_DIR)) 
       return -ENOMEM; 
+    ctx->pos++;
   }
 
-  int i = 2;
+  int numb = 2; // 
   list_for_each_entry(file, &ram_vtfs_files, list) {
-    if (i >= offset){
+    if (numb >= offset){
       if (!dir_emit(ctx, file->name, strlen(file->name), file->ino, file->mode & S_IFMT)) 
         return -ENOMEM; 
       ctx->pos++;
     }
-    i++;
+    numb++;
   }
   return 0;
 }
