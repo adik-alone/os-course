@@ -1,8 +1,14 @@
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/printk.h>
-#include <linux/fs.h>
-#include <linux/stat.h>
+#ifndef UTILS
+  #define UTILS
+  #include <linux/init.h>
+  #include <linux/module.h>
+  #include <linux/printk.h>
+  #include <linux/fs.h>
+  #include <linux/stat.h>
+#endif
+
+#define ROOT_INODE 1000
+
 struct dentry* vtfs_mount(struct file_system_type* fs_type, int flags, const char* token,void* data);
 void vtfs_kill_sb(struct super_block* sb);
 int vtfs_fill_super(struct super_block *sb, void *data, int silent);

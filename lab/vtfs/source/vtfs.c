@@ -1,7 +1,7 @@
-#include "vtfs.h"
+// #include "vtfs.h"
+#include "ram_vtfs.h"
 
 #define MODULE_NAME "vtfs"
-#define ROOT_INODE 1000
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("secs-dev & adik-alone");
@@ -47,8 +47,8 @@ struct dentry* vtfs_mount(
 int vtfs_fill_super(struct super_block *sb, void *data, int silent) {
     umode_t mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
     struct inode* inode = vtfs_get_inode(sb, NULL, mode, ROOT_INODE);
-    inode->i_op = &vtfs_inode_ops;
-    inode->i_fop = &vtfs_dir_ops;
+    inode->i_op = &ram_vtfs_inode_ops;
+    inode->i_fop = &ram_vtfs_dir_ops;
     sb->s_root = d_make_root(inode);
     if (sb->s_root == NULL) {
       return -ENOMEM;
@@ -60,7 +60,6 @@ int vtfs_fill_super(struct super_block *sb, void *data, int silent) {
 void vtfs_kill_sb(struct super_block* sb) {
     printk(KERN_INFO "vtfs super block is destroyed. Unmount successfully.\n");
 }
-
 
 static int __init vtfs_init(void) {
   int reg = register_filesystem(&vtfs_fs_type);
@@ -81,6 +80,7 @@ static void __exit vtfs_exit(void) {
   LOG("VTFS left the kernel\n");
 }
 
+//inode operations
 
 struct dentry* vtfs_lookup(
     struct inode* parent_inode,  // родительская нода
@@ -89,13 +89,18 @@ struct dentry* vtfs_lookup(
 ){
   ino_t root = parent_inode->i_ino;
   const char *name = child_dentry->d_name.name;
-  if (root == ROOT_INODE && !strcmp(name, "test.txt")) {
+  
+
+  if (root != ROOT_INODE){
+    return NULL;
+  }
+  if (!strcmp(name, "test.txt")) {
     struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFREG, 101);
     d_add(child_dentry, inode);
-  } else if (root == ROOT_INODE && !strcmp(name, "dir")) {
+  } else if (!strcmp(name, "dir")) {
     struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFDIR, 200);
     d_add(child_dentry, inode);
-  } else if (root == ROOT_INODE && !strcmp(name, "new_file.txt")){
+  } else if (!strcmp(name, "new_file.txt")){
     struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFREG, 102);
     d_add(child_dentry, inode);
   }
@@ -103,7 +108,6 @@ struct dentry* vtfs_lookup(
 }
 
 int vtfs_create(
-  // struct user_namespase *usr_ns,
   struct mnt_idmap *idmap,
   struct inode *parent_inode, 
   struct dentry *child_dentry, 
@@ -114,14 +118,22 @@ int vtfs_create(
   ino_t root = parent_inode->i_ino;
   const char *name = child_dentry->d_name.name;
   struct inode *inode = NULL;
-  if (root == ROOT_INODE && !strcmp(name, "test.txt")) {
+
+  if (d_lookup(child_dentry, &child_dentry->d_name))
+    return -EEXIST;
+
+  if (root != ROOT_INODE)
+    return 0;
+
+
+  if (!strcmp(name, "test.txt")) {
     inode = vtfs_get_inode(
     parent_inode->i_sb, NULL, S_IFREG | S_IRWXUGO, 101);
     inode->i_op = &vtfs_inode_ops;
     inode->i_fop = NULL;
     d_add(child_dentry, inode);
     mask |= 1;
-  } else if (root == ROOT_INODE && !strcmp(name, "new_file.txt")) {
+  } else if (!strcmp(name, "new_file.txt")) {
     inode = vtfs_get_inode(
     parent_inode->i_sb, NULL, S_IFREG | S_IRWXUGO, 102);
     inode->i_op = &vtfs_inode_ops;
@@ -136,15 +148,18 @@ int vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
   const char *name = child_dentry->d_name.name;
   ino_t root = parent_inode->i_ino;
   int mask;
-  if (root == ROOT_INODE && !strcmp(name, "test.txt")) {
+  if (root != ROOT_INODE){
+    return 0;
+  }
+  if (!strcmp(name, "test.txt")) {
       mask &= ~1;
-  } else if (root == ROOT_INODE && !strcmp(name, "new_file.txt")) {
+  } else if (!strcmp(name, "new_file.txt")) {
       mask &= ~2;
   }
   return 0;
 }
 
-
+//file operations
 
 int vtfs_iterate(struct file* filp, struct dir_context* ctx) {
   char fsname[20];
@@ -178,15 +193,121 @@ int vtfs_iterate(struct file* filp, struct dir_context* ctx) {
   }else {
     return 0; 
   }
-  
-
   if (!dir_emit(ctx, fsname, strlen(fsname), dino, ftype))
     return -ENOMEM; 
 
   ctx->pos++; 
-  // printk(KERN_INFO "2: f_pos = %lu\n", ctx->pos);
   return 1;
 }
+
+
+// ===================================
+// RAM 
+// ===================================
+
+// inode operation
+struct dentry* ram_vtfs_lookup(
+    struct inode* parent_inode,  // родительская нода
+    struct dentry* child_dentry, // объект, к которому мы пытаемся получить доступ
+    unsigned int flag            // неиспользуемое значение
+){
+  const char *name = child_dentry->d_name.name;
+  struct ram_vtfs_file *file;
+
+  list_for_each_entry(file, &ram_vtfs_files, list){
+    if (!strcmp(file->name, name)){
+      struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, file->mode, file->ino); 
+      if (inode)
+        d_add(child_dentry, inode);
+    }
+  }
+  return NULL;
+}
+
+int ram_vtfs_create(
+  struct mnt_idmap *idmap,
+  struct inode *parent_inode, 
+  struct dentry *child_dentry, 
+  umode_t mode, 
+  bool b
+) {
+  const char *name = child_dentry->d_name.name;
+
+  struct ram_vtfs_file *file;
+
+  if (d_lookup(child_dentry, &child_dentry->d_name))
+    return -EEXIST;
+
+  file = kmalloc(sizeof(*file), GFP_KERNEL);
+  if (file)
+    return -ENOMEM;
+
+  strncpy(file->name, name, NAME_MAX);
+  file->ino = next_ino++;
+  file->mode = mode;
+
+  list_add(&file->list, &ram_vtfs_files);
+
+  struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, mode | S_IFREG | S_IRWXUGO, file->ino);
+  inode->i_op = &ram_vtfs_inode_ops;
+  inode->i_fop = &ram_vtfs_file_ops;
+  
+  d_add(child_dentry, inode);
+  return 0;
+}
+
+int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
+  const char *name = child_dentry->d_name.name;
+  struct ram_vtfs_file *file, *tmp;
+
+  list_for_each_entry_safe(file, tmp, &ram_vtfs_files, list){
+    if (!strcmp(file->name, name)){
+      list_del(&file->list);
+      kfree(file);
+      return 0;
+    }
+  }
+  return -ENOENT;
+}
+
+
+
+
+
+//file operation
+
+int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
+  // char fsname[20];
+  struct dentry* dentry = filp->f_path.dentry;
+  struct inode* inode   = dentry->d_inode;
+  struct ram_vtfs_file *file;
+  unsigned long offset  = ctx->pos;
+
+  printk(KERN_INFO "Messege: f_pos = %lu\n", ctx->pos);
+
+  if (inode->i_ino != ROOT_INODE) return 0; 
+
+  if (offset == 0) {
+    if (!dir_emit(ctx, ".", 1, inode->i_ino, DT_DIR)) 
+      return -ENOMEM; 
+  } 
+  if (offset == 1) {
+    if (!dir_emit(ctx, "..", 2, dentry->d_parent->d_inode->i_ino, DT_DIR)) 
+      return -ENOMEM; 
+  }
+
+  int i = 2;
+  list_for_each_entry(file, &ram_vtfs_files, list) {
+    if (i >= offset){
+      if (!dir_emit(ctx, file->name, strlen(file->name), file->ino, file->mode & S_IFMT)) 
+        return -ENOMEM; 
+      ctx->pos++;
+    }
+    i++;
+  }
+  return 0;
+}
+
 
 
 
