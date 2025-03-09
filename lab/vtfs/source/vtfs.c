@@ -240,7 +240,7 @@ int ram_vtfs_create(
     return -EEXIST;
 
   file = kmalloc(sizeof(*file), GFP_KERNEL);
-  if (file){
+  if (!file){
     printk(KERN_ERR "vtfs_create: not enought memory\n");
     printk(KERN_INFO "Creating failed\n");
     return -ENOMEM;
@@ -292,7 +292,7 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
   struct ram_vtfs_file *file;
   unsigned long offset  = ctx->pos;
 
-  printk(KERN_INFO "Messege: f_pos = %lu\n", ctx->pos);
+  // printk(KERN_INFO "Messege: f_pos = %lu\n", ctx->pos);
 
   if (inode->i_ino != ROOT_INODE) return 0; 
 
@@ -307,14 +307,16 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
     ctx->pos++;
   }
 
-  int numb = 2; // 
-  list_for_each_entry(file, &ram_vtfs_files, list) {
-    if (numb >= offset){
-      if (!dir_emit(ctx, file->name, strlen(file->name), file->ino, file->mode & S_IFMT)) 
-        return -ENOMEM; 
-      ctx->pos++;
+  if (offset > 1){
+    int numb = 2; 
+    list_for_each_entry(file, &ram_vtfs_files, list) {
+      if (numb >= offset){
+        if (!dir_emit(ctx, file->name, strlen(file->name), file->ino, file->mode & S_IFMT)) 
+          return -ENOMEM; 
+        ctx->pos++;
+      }
+      numb++;
     }
-    numb++;
   }
   return 0;
 }
