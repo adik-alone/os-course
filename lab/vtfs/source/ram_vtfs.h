@@ -11,6 +11,7 @@
   #define FILES_UNILS
   #include <linux/slab.h>
   #include <linux/list.h>
+  #include <linux/dcache.h>
 #endif
 
 #ifndef VTFS
@@ -53,6 +54,8 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry);
 //file operations 
 
 int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx);
+int ram_vtfs_mkdir(struct mnt_idmap *idmap, struct inode *inode, struct dentry *dentry, umode_t mode);
+int ram_vtfs_rmdir(struct inode *inode, struct dentry *dentry);
 
 
 
@@ -63,6 +66,8 @@ struct inode_operations ram_vtfs_inode_ops = {
     .lookup = ram_vtfs_lookup,
     .create = ram_vtfs_create,
     .unlink = ram_vtfs_unlink,
+    .mkdir  = ram_vtfs_mkdir,
+    .rmdir  = ram_vtfs_rmdir,
 };
 
 struct file_operations ram_vtfs_dir_ops = {
