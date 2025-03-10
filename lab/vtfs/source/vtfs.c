@@ -10,8 +10,9 @@ struct inode* vtfs_get_inode(
   if (inode == NULL) {
     return NULL;
   }
-  inode_init_owner(&nop_mnt_idmap, inode, dir, mode);
+  inode_init_owner(NULL, inode, dir, mode);
   inode->i_ino = i_ino;
+  inode->i_sb = sb;
   if (S_ISDIR(mode)){
     struct ram_vtfs_dir_list *dir_list = kmalloc(sizeof(struct ram_vtfs_dir_list), GFP_KERNEL);
     if (!dir_list){
@@ -20,6 +21,7 @@ struct inode* vtfs_get_inode(
     }
     INIT_LIST_HEAD(&dir_list->children);
     inode->i_private = dir_list;
+
   }else{
     inode->i_private = NULL;
   }
@@ -308,7 +310,7 @@ int ram_vtfs_mkdir(
   printk(KERN_INFO "vtfs_mkdir: Creating dir\n");
   const char *name = child_dentry->d_name.name;
   struct ram_vtfs_file *dir;
-  struct ram_vtfs_dir_list *dir_list, *parent_list = parent_inode->i_private;
+  struct ram_vtfs_dir_list *parent_list = parent_inode->i_private;
 
   if (!parent_list){
     printk(KERN_ERR "mkdir: isn't parent list\n");
@@ -343,7 +345,7 @@ int ram_vtfs_mkdir(
 
   inode->i_op = &ram_vtfs_inode_ops;
   inode->i_fop = & ram_vtfs_dir_ops;
-  inode->i_private = dir_list;
+  // inode->i_private = dir_list;
 
   //добавляем в лист парента
   list_add(&dir->list, &parent_list->children);
@@ -497,10 +499,6 @@ int ram_vtfs_open(struct inode *inode, struct file *filp){
 int ram_vtfs_release(struct inode *inode, struct file *filp){
   return 0;
 }
-
-
-
-
 
 module_init(vtfs_init);
 module_exit(vtfs_exit);
