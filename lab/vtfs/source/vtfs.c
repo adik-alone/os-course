@@ -26,6 +26,16 @@ struct inode* vtfs_get_inode(
   if (inode != NULL) {
     inode_init_owner(&nop_mnt_idmap, inode, dir, mode);
   }
+
+  if (S_ISDIR(mode)){
+    struct ram_vtfs_dir_list *dir_list = kmalloc(sizeof(struct ram_vtfs_dir_list), GFP_KERNEL);
+    if (!dir_list)
+      return NULL;
+    INIT_LIST_HEAD(&dir_list->children);
+    inode->i_private = dir_list;
+  }else{
+    inode->i_private = NULL;
+  }
   inode->i_ino = i_ino;
   return inode;
 }
@@ -212,9 +222,10 @@ struct dentry* ram_vtfs_lookup(
     unsigned int flag            // неиспользуемое значение
 ){
   const char *name = child_dentry->d_name.name;
+  struct ram_vtfs_dir_list *parent_list = parent_inode->i_private;
   struct ram_vtfs_file *file;
 
-  list_for_each_entry(file, &ram_vtfs_files, list){
+  list_for_each_entry(file, &parent_list->children, list){
     if (!strcmp(file->name, name)){
       struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, file->mode, file->ino); 
       if (inode)
@@ -236,6 +247,7 @@ int ram_vtfs_create(
   const char *name = child_dentry->d_name.name;
 
   struct ram_vtfs_file *file;
+  struct ram_vtfs_dir_list *parent_list = parent_inode->i_private;
 
   if (d_lookup(child_dentry, &child_dentry->d_name)){
     printk(KERN_ERR "ram_vtfs_create: file with this name already exists");
@@ -254,16 +266,12 @@ int ram_vtfs_create(
   file->ino = next_ino++;
   file->mode = mode;
 
-  list_add(&file->list, &ram_vtfs_files);
+  list_add(&file->list, &parent_list->children);
 
   struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, mode | S_IRWXUGO, file->ino);
   inode->i_op = &ram_vtfs_inode_ops;
-  // if (mode & S_IFDIR == 0){
   inode->i_fop = &ram_vtfs_file_ops;
   inode->i_private = kmalloc(FILE_MAX_SIZE, GFP_KERNEL);
-  // }else{
-  //   inode->i_fop = &ram_vtfs_dir_ops;
-  // }
   
   
   d_add(child_dentry, inode);
@@ -275,10 +283,15 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
   printk(KERN_INFO "Strart deletting file\n");
   const char *name = child_dentry->d_name.name;
   struct ram_vtfs_file *file, *tmp;
+  struct ram_vtfs_dir_list *parent_list = parent_inode->i_private;
 
-  list_for_each_entry_safe(file, tmp, &ram_vtfs_files, list){
+  list_for_each_entry_safe(file, tmp, &parent_list->children, list){
     if (!strcmp(file->name, name)){
       list_del(&file->list);
+      struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, file->mode, file->ino);
+      if (!inode->i_private){
+        kfree(inode->i_private);
+      }
       kfree(file);
       printk(KERN_INFO "Deletting successe\n");
       return 0;
@@ -289,69 +302,82 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
   return -ENOENT;
 }
 
+// 
+// 
+// 
 int ram_vtfs_mkdir(
   struct mnt_idmap *idmap,
   struct inode *parent_inode,
   struct dentry *child_dentry,
   umode_t mode
 ){
-  printk(KERN_INFO "Creating dir\n");
-  if(!ram_vtfs_create(idmap, parent_inode, child_dentry, mode | S_IFDIR, true)){
-    printk(KERN_ERR "ram_vtfs_mkdir: error\n");
-    return -1;
-  }
-
+  printk(KERN_INFO "vtfs_mkdir: Creating dir\n");
   const char *name = child_dentry->d_name.name;
-  struct ram_vtfs_file *file;
+  struct ram_vtfs_file *dir;
+  struct ram_vtfs_dir_list *dir_list, *parent_list = parent_inode->i_private;
 
-  list_for_each_entry(file, &ram_vtfs_files, list){
-    if (!strcmp(file->name, name)){
-      struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, file->mode, file->ino); 
-      if (inode)
-        inode->i_op = &ram_vtfs_inode_ops;
-        inode->i_fop = &ram_vtfs_dir_ops;
-    }
+  // проверка на наличите файлов с таким же именем
+  if (d_lookup(child_dentry, &child_dentry->d_name)){
+    printk(KERN_ERR "ram_vtfs_mkdir: file with this name already exists");
+    return -EEXIST;
   }
+  dir = kmalloc(sizeof(struct ram_vtfs_file), GFP_KERNEL);
+  if (!dir){
+    printk(KERN_ERR "ram_vtfs_mkdir: no memory");
+    return -ENOMEM;
+  }
+
+  strcpy(dir->name, name);
+  dir->ino = next_ino++;
+  dir->mode = mode;
+
+  struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, mode | S_IFDIR, dir->ino);
+  if(!inode){
+    kfree(dir);
+    printk(KERN_ERR "ram_vtfs_mkdir: no memory");
+    return -ENOMEM;
+  }
+
+  inode->i_op = &ram_vtfs_inode_ops;
+  inode->i_fop = & ram_vtfs_dir_ops;
+  inode->i_private = dir_list;
+
+  //добавляем в лист парента
+  list_add(&dir->list, &parent_list->children);
+
+  d_add(child_dentry, inode);
+
   printk(KERN_INFO "ram_vtfs_mkdir: creating done\n");
   return 0;
 }
 
-
-static int count_files(struct dir_context *ctx, const char *name, int namelen, loff_t offset, u64 ino, unsigned int d_type) {
-    if (strcmp(name, ".") && strcmp(name, "..")) {
-        return -1;
-    }
-    return 0;
-}
-
-// static int dir_empty(struct file *filp){
-//   struct dir_context ctx = {
-//     .actor = count_files,
-//     .pos = 0,
-//   };
-//   if (iterate_dir(filp, &ctx) < 0){
-//     return 0; // dir isn't empty
-//   }
-//   return 1; // dir empty
-// }
-
-
 int ram_vtfs_rmdir( struct inode *parent_inode, struct dentry *child_dentry ){
   printk(KERN_INFO "ram_vtfs_rmdir: strart\n");
-  // проверка на наличие файлов в директории
-  // if (!dir_empty(child_dentry)){
-  if(!hlist_empty(&child_dentry->d_children)) {
-    printk(KERN_ERR "ram_vtfs_rmdir: directory is not empty");
-    return -1;
-  }
-  if(!ram_vtfs_unlink(parent_inode, child_dentry)){
-    printk(KERN_ERR "ram_vtfs_rmdir: error in deleting");
-    return -1;
-  }
-  printk(KERN_INFO "ram_vtfs_rmdir: finish\n");
-  return 0;
-}
 
+  const char *name = child_dentry->d_name.name;
+  struct ram_vtfs_dir_list *parent_dir_list = parent_inode->i_private;
+  struct ram_vtfs_file *dir, *tmp;
+
+  // проверить пуста ли директория
+
+  list_for_each_entry_safe(dir, tmp, &parent_dir_list->children, list){
+    if (!strcmp(dir->name, name)){
+      struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, dir->mode, dir->ino);
+      struct ram_vtfs_dir_list *dir_list = inode->i_private;
+      if (!list_empty(&dir_list->children)){
+        printk(KERN_ERR "ram_vtfs_rmdir: dir isn't empty\n");
+        return -ENOTEMPTY;
+      }
+      list_del(&dir->list);
+      kfree(dir);
+      printk(KERN_INFO "ram_vtfs_rmdir: successe\n");
+      return 0;
+    }
+  }
+  printk(KERN_ERR "ram_vtfs_rmdir: dir didn't found");
+  return -ENOENT;
+
+}
 
 
 //file operation
@@ -363,9 +389,13 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
   struct ram_vtfs_file *file;
   unsigned long offset  = ctx->pos;
 
-  // printk(KERN_INFO "Messege: f_pos = %lu\n", ctx->pos);
+  struct ram_vtfs_dir_list *dir_list = inode->i_private;
+  if (!dir_list){
+    printk(KERN_ERR "vtfs_iterate: not a dir");
+    return -ENOTDIR;
+  }
 
-  // if (inode->i_ino != ROOT_INODE) return 0; 
+  // printk(KERN_INFO "Messege: f_pos = %lu\n", ctx->pos);
 
   if (offset == 0) {
     if (!dir_emit(ctx, ".", 1, inode->i_ino, DT_DIR)) 
@@ -380,7 +410,7 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
 
   if (offset > 1){
     int numb = 2; 
-    list_for_each_entry(file, &ram_vtfs_files, list) {
+    list_for_each_entry(file, &dir_list->children, list) {
       if (numb >= offset){
         if (!dir_emit(ctx, file->name, strlen(file->name), file->ino, file->mode & S_IFMT)) 
           return -ENOMEM; 

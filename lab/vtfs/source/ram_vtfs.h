@@ -30,7 +30,10 @@ struct ram_vtfs_file {
     struct list_head list;
 };
 
-static LIST_HEAD(ram_vtfs_files);
+struct ram_vtfs_dir_list {
+  struct list_head children;
+};
+
 static ino_t next_ino = ROOT_INODE + 1; 
 
 
