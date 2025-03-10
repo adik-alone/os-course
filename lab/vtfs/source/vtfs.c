@@ -23,20 +23,22 @@ struct inode* vtfs_get_inode(
   int i_ino
 ){
   struct inode *inode = new_inode(sb);
-  if (inode != NULL) {
-    inode_init_owner(&nop_mnt_idmap, inode, dir, mode);
+  if (inode == NULL) {
+    return NULL;
   }
-
+  inode_init_owner(&nop_mnt_idmap, inode, dir, mode);
+  inode->i_ino = i_ino;
   if (S_ISDIR(mode)){
     struct ram_vtfs_dir_list *dir_list = kmalloc(sizeof(struct ram_vtfs_dir_list), GFP_KERNEL);
-    if (!dir_list)
+    if (!dir_list){
+      printk(KERN_ERR "vtfs_get_inode: dir list isn't kmalloc");
       return NULL;
+    }
     INIT_LIST_HEAD(&dir_list->children);
     inode->i_private = dir_list;
   }else{
     inode->i_private = NULL;
   }
-  inode->i_ino = i_ino;
   return inode;
 }
 
@@ -230,6 +232,7 @@ struct dentry* ram_vtfs_lookup(
       struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, file->mode, file->ino); 
       if (inode)
         d_add(child_dentry, inode);
+        return NULL;
     }
   }
   return NULL;
@@ -249,9 +252,13 @@ int ram_vtfs_create(
   struct ram_vtfs_file *file;
   struct ram_vtfs_dir_list *parent_list = parent_inode->i_private;
 
+  if (!parent_list){
+    printk(KERN_ERR "ram_vtfs_create: isn't parent list\n");
+    return -ENOENT;
+  }
+
   if (d_lookup(child_dentry, &child_dentry->d_name)){
-    printk(KERN_ERR "ram_vtfs_create: file with this name already exists");
-    printk(KERN_INFO "ram_vtfs_create: creating failed");
+    printk(KERN_ERR "ram_vtfs_create: file with this name already exists\n");
     return -EEXIST;
   }
 
@@ -316,14 +323,19 @@ int ram_vtfs_mkdir(
   struct ram_vtfs_file *dir;
   struct ram_vtfs_dir_list *dir_list, *parent_list = parent_inode->i_private;
 
+  if (!parent_list){
+    printk(KERN_ERR "mkdir: isn't parent list\n");
+    return -ENOENT;
+  }
+
   // проверка на наличите файлов с таким же именем
   if (d_lookup(child_dentry, &child_dentry->d_name)){
-    printk(KERN_ERR "ram_vtfs_mkdir: file with this name already exists");
+    printk(KERN_ERR "ram_vtfs_mkdir: file with this name already exists\n");
     return -EEXIST;
   }
   dir = kmalloc(sizeof(struct ram_vtfs_file), GFP_KERNEL);
   if (!dir){
-    printk(KERN_ERR "ram_vtfs_mkdir: no memory");
+    printk(KERN_ERR "ram_vtfs_mkdir: no memory\n");
     return -ENOMEM;
   }
 
@@ -334,7 +346,7 @@ int ram_vtfs_mkdir(
   struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, mode | S_IFDIR, dir->ino);
   if(!inode){
     kfree(dir);
-    printk(KERN_ERR "ram_vtfs_mkdir: no memory");
+    printk(KERN_ERR "ram_vtfs_mkdir: no memory\n");
     return -ENOMEM;
   }
 
@@ -374,7 +386,7 @@ int ram_vtfs_rmdir( struct inode *parent_inode, struct dentry *child_dentry ){
       return 0;
     }
   }
-  printk(KERN_ERR "ram_vtfs_rmdir: dir didn't found");
+  printk(KERN_ERR "ram_vtfs_rmdir: dir didn't found\n");
   return -ENOENT;
 
 }
@@ -391,8 +403,8 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
 
   struct ram_vtfs_dir_list *dir_list = inode->i_private;
   if (!dir_list){
-    printk(KERN_ERR "vtfs_iterate: not a dir");
-    return -ENOTDIR;
+    printk(KERN_ERR "vtfs_iterate: not a dir\n");
+    return -ENOENT;
   }
 
   // printk(KERN_INFO "Messege: f_pos = %lu\n", ctx->pos);
