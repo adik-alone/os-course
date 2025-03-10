@@ -1,20 +1,4 @@
-// #include "vtfs.h"
 #include "ram_vtfs.h"
-
-#define MODULE_NAME "vtfs"
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("secs-dev & adik-alone");
-MODULE_DESCRIPTION("A simple FS kernel module");
-
-#define LOG(fmt, ...) pr_info("[" MODULE_NAME "]: " fmt, ##__VA_ARGS__)
-
-
-struct file_system_type vtfs_fs_type = {
-  .name = "vtfs",
-  .mount = vtfs_mount,
-  .kill_sb = vtfs_kill_sb,
-};
 
 struct inode* vtfs_get_inode(
   struct super_block* sb, 
@@ -229,7 +213,8 @@ struct dentry* ram_vtfs_lookup(
 
   list_for_each_entry(file, &parent_list->children, list){
     if (!strcmp(file->name, name)){
-      struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, file->mode, file->ino); 
+      // struct inode *inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, file->mode, file->ino); 
+      struct inode *inode = file->inode;
       if (inode)
         d_add(child_dentry, inode);
         return NULL;
@@ -270,12 +255,13 @@ int ram_vtfs_create(
   }
 
   strncpy(file->name, name, NAME_MAX);
-  file->ino = next_ino++;
   file->mode = mode;
 
   list_add(&file->list, &parent_list->children);
 
-  struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, mode | S_IRWXUGO, file->ino);
+  next_ino++;
+  struct inode *inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, mode | S_IRWXUGO, next_ino);
+  file->inode = inode;
   inode->i_op = &ram_vtfs_inode_ops;
   inode->i_fop = &ram_vtfs_file_ops;
   inode->i_private = kmalloc(FILE_MAX_SIZE, GFP_KERNEL);
@@ -295,7 +281,8 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
   list_for_each_entry_safe(file, tmp, &parent_list->children, list){
     if (!strcmp(file->name, name)){
       list_del(&file->list);
-      struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, file->mode, file->ino);
+      // struct inode *inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, file->mode, file->ino);
+      struct inode *inode = file->inode;
       if (!inode->i_private){
         kfree(inode->i_private);
       }
@@ -340,15 +327,19 @@ int ram_vtfs_mkdir(
   }
 
   strcpy(dir->name, name);
-  dir->ino = next_ino++;
+  // dir->ino = next_ino++;
   dir->mode = mode;
+  next_ino++;
 
-  struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, mode | S_IFDIR, dir->ino);
+  struct inode *inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, S_IFDIR | mode, next_ino);
+
   if(!inode){
     kfree(dir);
     printk(KERN_ERR "ram_vtfs_mkdir: no memory\n");
     return -ENOMEM;
   }
+
+  dir->inode = inode;
 
   inode->i_op = &ram_vtfs_inode_ops;
   inode->i_fop = & ram_vtfs_dir_ops;
@@ -374,7 +365,8 @@ int ram_vtfs_rmdir( struct inode *parent_inode, struct dentry *child_dentry ){
 
   list_for_each_entry_safe(dir, tmp, &parent_dir_list->children, list){
     if (!strcmp(dir->name, name)){
-      struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, dir->mode, dir->ino);
+      // struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, dir->mode, dir->ino);
+      struct inode *inode = dir->inode;
       struct ram_vtfs_dir_list *dir_list = inode->i_private;
       if (!list_empty(&dir_list->children)){
         printk(KERN_ERR "ram_vtfs_rmdir: dir isn't empty\n");
@@ -424,7 +416,7 @@ int ram_vtfs_iterate(struct file* filp, struct dir_context* ctx) {
     int numb = 2; 
     list_for_each_entry(file, &dir_list->children, list) {
       if (numb >= offset){
-        if (!dir_emit(ctx, file->name, strlen(file->name), file->ino, file->mode & S_IFMT)) 
+        if (!dir_emit(ctx, file->name, strlen(file->name), file->inode->i_ino, file->mode)) 
           return -ENOMEM; 
         ctx->pos++;
       }

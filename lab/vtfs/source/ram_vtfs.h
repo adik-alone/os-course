@@ -25,7 +25,7 @@
 
 struct ram_vtfs_file {
     char name[NAME_MAX];
-    ino_t ino; 
+    struct inode *inode; 
     umode_t mode;
     struct list_head list;
 };

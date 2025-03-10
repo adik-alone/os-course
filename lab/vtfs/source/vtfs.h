@@ -9,6 +9,13 @@
 
 #define ROOT_INODE 1000
 
+#define MODULE_NAME "vtfs"
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("secs-dev & adik-alone");
+MODULE_DESCRIPTION("A simple FS kernel module");
+
+#define LOG(fmt, ...) pr_info("[" MODULE_NAME "]: " fmt, ##__VA_ARGS__)
+
 struct dentry* vtfs_mount(struct file_system_type* fs_type, int flags, const char* token,void* data);
 void vtfs_kill_sb(struct super_block* sb);
 int vtfs_fill_super(struct super_block *sb, void *data, int silent);
@@ -59,6 +66,12 @@ int vtfs_iterate(struct file* filp, struct dir_context* ctx);
 
 
 // structs
+
+struct file_system_type vtfs_fs_type = {
+  .name = "vtfs",
+  .mount = vtfs_mount,
+  .kill_sb = vtfs_kill_sb,
+};
 
 struct inode_operations vtfs_inode_ops = {
     .lookup = vtfs_lookup,
