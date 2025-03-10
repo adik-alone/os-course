@@ -286,6 +286,8 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
       struct inode *inode = file->inode;
       // inode->i_nlink--;
       drop_nlink(inode);
+      ihold(inode);
+      // mark_inode_dirty(inode);
       if (inode->i_nlink == 0){
         if (!inode->i_private){
           kfree(inode->i_private);
@@ -301,6 +303,42 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
   printk(KERN_ERR "vtfs_unlink:No entity\n");
   printk(KERN_INFO "Deletting failed\n");
   return -ENOENT;
+}
+
+int ram_vtfs_link(
+  struct dentry *old_dentry,
+  struct inode *parent_inode,
+  struct dentry *new_dentry
+) {
+  const char *name = new_dentry->d_name.name;
+  struct ram_vtfs_file *file;
+  struct inode *inode = d_inode(old_dentry);
+  struct ram_vtfs_dir_list *parent_list = parent_inode->i_private;
+
+  if (!parent_list){
+    return -EPERM;
+  }
+  file = kmalloc(sizeof(struct ram_vtfs_file), GFP_KERNEL);
+  if (!file){
+    printk(KERN_ERR "ram_vtfs_link: nomem");
+    return -ENOMEM;
+  }
+  if (!S_ISREG(inode->i_mode)){
+    printk(KERN_ERR "ram_vtfs_link: only for regular files\n");
+    kfree(file);
+    return -EPERM;
+  }
+
+  inc_nlink(inode);
+  // mark_inode_dirty(inode);
+  ihold(inode);
+
+  strcpy(file->name, name);
+  file->mode = inode->i_mode;
+  file->inode = inode;
+  list_add(&file->list, &parent_list->children);
+  d_instantiate(new_dentry, inode);
+  return 0;
 }
 
 // 
@@ -390,22 +428,6 @@ int ram_vtfs_rmdir( struct inode *parent_inode, struct dentry *child_dentry ){
 
 }
 
-int ram_vtfs_link(
-  struct dentry *old_dentry,
-  struct inode *parent_inode,
-  struct dentry *new_dentry
-) {
-  struct inode *inode = d_inode(old_dentry);
-
-  if (!S_ISREG(inode->i_mode)){
-    printk(KERN_ERR "ram_vtfs_link: only for regular files\n");
-    return -EPERM;
-  }
-
-  ihold(inode);
-  d_instantiate(new_dentry, inode);
-  return 0;
-}
 
 //file operation
 
@@ -459,6 +481,11 @@ ssize_t ram_vtfs_read(
   loff_t *offset     //смещение 
 ){ 
   struct inode *inode = file_inode(filp);
+
+  if (!inode){
+    printk(KERN_ERR "vtfs_read: inode deleted\n");
+    return -ENOENT;
+  }
   char *data = inode->i_private;
   size_t data_size;
 
@@ -486,6 +513,11 @@ ssize_t ram_vtfs_write(
   struct inode *inode = file_inode(filp);
   char *data;
   
+  if (!inode){
+    printk(KERN_ERR "vtfs_read: inode deleted\n");
+    return -ENOENT;
+  }
+
   if (len > FILE_MAX_SIZE){
     printk(KERN_ERR "vtfs_write: len > file_size");
     return -ENOMEM;
