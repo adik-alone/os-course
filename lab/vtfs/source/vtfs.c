@@ -10,7 +10,7 @@ struct inode* vtfs_get_inode(
   if (inode == NULL) {
     return NULL;
   }
-  inode_init_owner(NULL, inode, dir, mode);
+  inode_init_owner(&nop_mnt_idmap, inode, dir, mode);
   inode->i_ino = i_ino;
   inode->i_sb = sb;
   if (S_ISDIR(mode)){
@@ -283,14 +283,19 @@ int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry) {
   list_for_each_entry_safe(file, tmp, &parent_list->children, list){
     if (!strcmp(file->name, name)){
       list_del(&file->list);
-      // struct inode *inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, file->mode, file->ino);
       struct inode *inode = file->inode;
-      if (!inode->i_private){
-        kfree(inode->i_private);
+      // inode->i_nlink--;
+      drop_nlink(inode);
+      if (inode->i_nlink == 0){
+        if (!inode->i_private){
+          kfree(inode->i_private);
+        }
+        kfree(file);
+        printk(KERN_INFO "Deletting successe\n");
+        return 0;
       }
-      kfree(file);
-      printk(KERN_INFO "Deletting successe\n");
-      return 0;
+    d_drop(child_dentry);
+    return 0;
     }
   }
   printk(KERN_ERR "vtfs_unlink:No entity\n");
@@ -385,6 +390,22 @@ int ram_vtfs_rmdir( struct inode *parent_inode, struct dentry *child_dentry ){
 
 }
 
+int ram_vtfs_link(
+  struct dentry *old_dentry,
+  struct inode *parent_inode,
+  struct dentry *new_dentry
+) {
+  struct inode *inode = d_inode(old_dentry);
+
+  if (!S_ISREG(inode->i_mode)){
+    printk(KERN_ERR "ram_vtfs_link: only for regular files\n");
+    return -EPERM;
+  }
+
+  ihold(inode);
+  d_instantiate(new_dentry, inode);
+  return 0;
+}
 
 //file operation
 

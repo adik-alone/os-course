@@ -56,6 +56,7 @@ int ram_vtfs_create(
 int ram_vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry);
 int ram_vtfs_mkdir(struct mnt_idmap *idmap, struct inode *inode, struct dentry *dentry, umode_t mode);
 int ram_vtfs_rmdir(struct inode *inode, struct dentry *dentry);
+int ram_vtfs_link(struct dentry *old_dentry, struct inode *parent_inode, struct dentry *new_dentry);
 
 
 //file operations 
@@ -87,6 +88,7 @@ struct inode_operations ram_vtfs_inode_ops = {
     .unlink = ram_vtfs_unlink,
     .mkdir  = ram_vtfs_mkdir,
     .rmdir  = ram_vtfs_rmdir,
+    .link   = ram_vtfs_link,
 };
 
 struct file_operations ram_vtfs_dir_ops = {
