@@ -12,6 +12,7 @@
   #include <linux/slab.h>
   #include <linux/list.h>
   #include <linux/dcache.h>
+  #include <linux/uaccess.h>
 #endif
 
 #ifndef VTFS
@@ -20,6 +21,7 @@
 #endif
 
 // #define MAX_NAME_SIZE 64
+#define FILE_MAX_SIZE 4096
 
 struct ram_vtfs_file {
     char name[NAME_MAX];
@@ -69,6 +71,8 @@ ssize_t ram_vtfs_write(
   size_t len, 
   loff_t *offset
 );
+int ram_vtfs_open(struct inode *inode, struct file *filp);
+int ram_vtfs_release(struct inode *inode, struct file *filp);
 
 
 
@@ -89,6 +93,6 @@ struct file_operations ram_vtfs_dir_ops = {
 struct file_operations ram_vtfs_file_ops = {
   .read = ram_vtfs_read,
   .write = ram_vtfs_write,
-  // .open = ram_vtfs_open,
-  // .release = ram_vtfs_release,
+  .open = ram_vtfs_open,
+  .release = ram_vtfs_release,
 };

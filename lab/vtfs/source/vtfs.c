@@ -243,7 +243,7 @@ int ram_vtfs_create(
     return -EEXIST;
   }
 
-  file = kmalloc(sizeof(*file), GFP_KERNEL);
+  file = kmalloc(sizeof(struct ram_vtfs_file), GFP_KERNEL);
   if (!file){
     printk(KERN_ERR "ram_vtfs_create: not enought memory\n");
     printk(KERN_INFO "ram_vtfs_create: reating failed\n");
@@ -258,7 +258,13 @@ int ram_vtfs_create(
 
   struct inode *inode = vtfs_get_inode(parent_inode->i_sb, NULL, mode | S_IRWXUGO, file->ino);
   inode->i_op = &ram_vtfs_inode_ops;
+  // if (mode & S_IFDIR == 0){
   inode->i_fop = &ram_vtfs_file_ops;
+  inode->i_private = kmalloc(FILE_MAX_SIZE, GFP_KERNEL);
+  // }else{
+  //   inode->i_fop = &ram_vtfs_dir_ops;
+  // }
+  
   
   d_add(child_dentry, inode);
   printk(KERN_INFO "Finish creating file\n");
@@ -395,16 +401,68 @@ ssize_t ram_vtfs_read(
   size_t len,        // длина данных для записи
   loff_t *offset     //смещение 
 ){ 
+  struct inode *inode = file_inode(filp);
+  char *data = inode->i_private;
+  size_t data_size;
 
+  if (!data) return 0;
+
+  data_size = strlen(data);
+
+  if (*offset >= data_size) return 0;
+
+  if (*offset + len > data_size) len = data_size - *offset;
+
+  if (copy_to_user(buffer, data + *offset, len)) return -EFAULT;
+
+  *offset += len;
+  return len;
 }
-// ssize_t ram_vtfs_write(
-//   struct file *filp, 
-//   const char *buffer, 
-//   size_t len, 
-//   loff_t *offset
-// ){
 
-// }
+ssize_t ram_vtfs_write(
+  struct file *filp, 
+  const char *buffer, 
+  size_t len, 
+  loff_t *offset
+){
+  printk(KERN_INFO "vtfs_write: start");
+  struct inode *inode = file_inode(filp);
+  char *data;
+  
+  if (len > FILE_MAX_SIZE){
+    printk(KERN_ERR "vtfs_write: len > file_size");
+    return -ENOMEM;
+  } 
+
+  if(!inode->i_private){
+    inode->i_private = kmalloc(FILE_MAX_SIZE, GFP_KERNEL);
+    if (!inode->i_private){
+      printk(KERN_ERR "vtfs_write: no mem");
+      return -ENOMEM;
+    }
+  }
+
+  data = inode->i_private;
+
+  if (copy_from_user(data, buffer, len)) {
+    printk(KERN_ERR "vtfs_write: no mem");
+    return -EFAULT;
+  }
+  
+  data[len] = '\0';
+
+  printk(KERN_INFO "vtfs_write: finish");
+  return len;
+}
+
+int ram_vtfs_open(struct inode *inode, struct file *filp){
+  filp->private_data = inode->i_private;
+  return 0;
+}
+
+int ram_vtfs_release(struct inode *inode, struct file *filp){
+  return 0;
+}
 
 
 
